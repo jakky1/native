@@ -1,6 +1,6 @@
+#include <jni.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <jni.h>
 #include <stdlib.h>
 
 #if _WIN32
@@ -23,7 +23,7 @@
 #endif
 
 #ifdef __ANDROID__
-#include<android/log.h>
+#include <android/log.h>
 #endif
 
 #define JNI_LOG_TAG "Dart-JNI"
@@ -43,11 +43,18 @@ struct jni_context {
 };
 
 extern thread_local JNIEnv *jniEnv;
+
 extern struct jni_context jni;
 
 enum DartJniLogLevel {
-	JNI_VERBOSE = 2, JNI_DEBUG, JNI_INFO, JNI_WARN, JNI_ERROR
+	JNI_VERBOSE = 2,
+	JNI_DEBUG,
+	JNI_INFO,
+	JNI_WARN,
+	JNI_ERROR
 };
+
+FFI_PLUGIN_EXPORT struct jni_context GetJniContext();
 
 FFI_PLUGIN_EXPORT JavaVM *GetJavaVM(void);
 
@@ -65,23 +72,39 @@ FFI_PLUGIN_EXPORT jobject GetCurrentActivity(void);
 
 FFI_PLUGIN_EXPORT void SetJNILogging(int level);
 
-/// For use by jni_gen's generated code
-/// don't use these.
+FFI_PLUGIN_EXPORT jstring ToJavaString(char *str);
 
-// `static inline` because `inline` doesn't work, it may still not 
+FFI_PLUGIN_EXPORT const char *GetJavaStringChars(jstring jstr);
+
+FFI_PLUGIN_EXPORT void ReleaseJavaStringChars(jstring jstr, const char *buf);
+
+// These 2 are the function pointer variables defined and exported by
+// the generated C files.
+//
+// initGeneratedLibrary function in Jni class will set these to
+// corresponding functions to the implementations from `dartjni` base library
+// which initializes and manages the JNI.
+extern struct jni_context (*context_getter)(void);
+extern JNIEnv *(*env_getter)(void);
+
+// This function will be exported by generated code library and will set the
+// above 2 variables.
+FFI_PLUGIN_EXPORT void setJniGetters(struct jni_context (*cg)(void),
+		JNIEnv *(*eg)(void));
+
+// `static inline` because `inline` doesn't work, it may still not
 // inline the function in which case a linker error may be produced.
 //
 // There has to be a better way to do this. Either to force inlining on target
 // platforms, or just leave it as normal function.
-
 static inline void __load_class_into(jclass *cls, const char *name) {
 #ifdef __ANDROID__
-		jstring className = (*jniEnv)->NewStringUTF(jniEnv, name);
-		*cls = (*jniEnv)->CallObjectMethod(
-		    jniEnv, jni.classLoader, jni.loadClassMethod, className);
-		(*jniEnv)->DeleteLocalRef(jniEnv, className);
+	jstring className = (*jniEnv)->NewStringUTF(jniEnv, name);
+	*cls = (*jniEnv)->CallObjectMethod(jniEnv, jni.classLoader,
+	                                   jni.loadClassMethod, className);
+	(*jniEnv)->DeleteLocalRef(jniEnv, className);
 #else
-		*cls = (*jniEnv)->FindClass(jniEnv, name);
+	*cls = (*jniEnv)->FindClass(jniEnv, name);
 #endif
 }
 
@@ -102,8 +125,15 @@ static inline void load_class_gr(jclass *cls, const char *name) {
 
 static inline void attach_thread() {
 	if (jniEnv == NULL) {
-		(*jni.jvm)->AttachCurrentThread(jni.jvm, __ENVP_CAST &jniEnv,
+		(*jni.jvm)->AttachCurrentThread(jni.jvm, __ENVP_CAST & jniEnv,
 		                                NULL);
+	}
+}
+
+static inline void load_env() {
+	if (jniEnv == NULL) {
+		jni = context_getter();
+		jniEnv = env_getter();
 	}
 }
 
@@ -119,5 +149,25 @@ static inline void load_static_method(jclass cls, jmethodID *res,
 	if (*res == NULL) {
 		*res = (*jniEnv)->GetStaticMethodID(jniEnv, cls, name, sig);
 	}
+}
+
+static inline void load_field(jclass cls, jfieldID *res, const char *name,
+                              const char *sig) {
+	if (*res == NULL) {
+		*res = (*jniEnv)->GetFieldID(jniEnv, cls, name, sig);
+	}
+}
+
+static inline void load_static_field(jclass cls, jfieldID *res,
+                                     const char *name, const char *sig) {
+	if (*res == NULL) {
+		*res = (*jniEnv)->GetStaticFieldID(jniEnv, cls, name, sig);
+	}
+}
+
+static inline jobject to_global_ref(jobject ref) {
+	jobject g = (*jniEnv)->NewGlobalRef(jniEnv, ref);
+	(*jniEnv)->DeleteLocalRef(jniEnv, ref);
+	return g;
 }
 
