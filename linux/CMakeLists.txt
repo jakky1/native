@@ -3,6 +3,7 @@
 # the plugin to fail to compile for some customers of the plugin.
 cmake_minimum_required(VERSION 3.10)
 
+#[[ Jacky
 # Project-level configuration.
 set(PROJECT_NAME "jni")
 project(${PROJECT_NAME} LANGUAGES CXX)
@@ -20,3 +21,5 @@ set(jni_bundled_libraries
   $<TARGET_FILE:jni>
   PARENT_SCOPE
 )
+
+#]]
